@@ -4,6 +4,7 @@ import com.stockscope.api.CompanyLookup;
 import com.stockscope.api.SecApiClient;
 import com.stockscope.api.SecApiException;
 import com.stockscope.charts.ChartGenerator;
+import com.stockscope.export.CsvExporter;
 import com.stockscope.models.Company;
 import com.stockscope.models.CompanyFinancials;
 import com.stockscope.services.FinancialDataService;
@@ -37,6 +38,7 @@ public class Main {
     private final CompanyLookup lookup;
     private final FinancialDataService dataService;
     private final ChartGenerator chartGenerator = new ChartGenerator(Path.of("output"));
+    private final CsvExporter csvExporter = new CsvExporter(Path.of("output"));
     private List<CompanyFinancials> companies = List.of(); // the current comparison
 
     public static void main(String[] args) {
@@ -63,7 +65,7 @@ public class Main {
             switch (choice) {
                 case 1 -> showCompanyDetails();
                 case 2 -> generateCharts();
-                case 3 -> System.out.println("\nCSV export will be added in Phase 7.");
+                case 3 -> exportCsv();
                 case 4 -> startNewComparison(); // if cancelled, the old comparison is kept
                 default -> {                    // 5 (Exit), or -1 if the input stream ended
                     System.out.println("Goodbye!");
@@ -159,6 +161,16 @@ public class Main {
             }
         } catch (IOException e) {
             System.out.println("  Could not save the charts: " + e.getMessage());
+        }
+    }
+
+    private void exportCsv() {
+        try {
+            Path file = csvExporter.export(companies);
+            System.out.println("\nExported the comparison to " + file);
+            System.out.println("Open it in Excel, Google Sheets, or any spreadsheet app.");
+        } catch (IOException e) {
+            System.out.println("  Could not save the CSV file: " + e.getMessage());
         }
     }
 

@@ -128,6 +128,59 @@ class FinancialDataServiceTest {
         assertThrows(SecApiException.class, () -> FinancialDataService.parse(SAMPLE_COMPANY, "not json"));
     }
 
+    // ----- Messy data: real SEC files contain all of these -----
+
+    private static final String MESSY_FACTS = """
+            {"facts": {"us-gaap": {
+              "Revenues": {"units": {"USD": [
+                {"start": "2023-01-01", "end": "2023-12-31", "val": 500,  "form": "10-K",   "filed": "2025-02-01"},
+                {"start": "2023-01-01", "end": "2023-12-31", "val": 450,  "form": "10-K",   "filed": "2024-02-01"},
+                {"start": "2022-01-01", "end": "2022-12-31", "val": 400,  "form": "10-K",   "filed": "2023-02-01"},
+                {"start": "2022-01-01", "end": "2022-12-31", "val": 410,  "form": "10-K/A", "filed": "2023-06-01"},
+                {"start": "2021-01-01", "end": "2023-12-31", "val": 9999, "form": "10-K",   "filed": "2024-02-01"},
+                {"end": "2023-12-31", "val": 7777, "form": "10-K", "filed": "2024-02-01"},
+                {"start": "2023-01-01", "end": "not-a-date", "val": 8888, "form": "10-K", "filed": "2024-02-01"},
+                {"start": "2023-01-01", "end": "2023-12-31", "form": "10-K", "filed": "2026-01-01"}
+              ]}},
+              "Assets": {"units": {"USD": [
+                {"end": "2023-12-31", "val": 1000, "form": "10-K", "filed": "2024-02-01"}
+              ]}}
+            }}}
+            """;
+
+    @Test
+    void newerFilingWinsEvenWhenListedFirst() throws SecApiException {
+        // The SEC doesn't promise any order. 500 (filed 2025) must beat 450 (filed 2024).
+        List<FinancialData> messy = FinancialDataService.parse(SAMPLE_COMPANY, MESSY_FACTS).years();
+        assertEquals(500L, messy.get(1).revenue());
+    }
+
+    @Test
+    void amendedReportReplacesTheOriginal() throws SecApiException {
+        // A 10-K/A is a corrected annual report, filed after the original.
+        List<FinancialData> messy = FinancialDataService.parse(SAMPLE_COMPANY, MESSY_FACTS).years();
+        assertEquals(410L, messy.get(0).revenue());
+    }
+
+    @Test
+    void malformedAndMultiYearEntriesAreSkippedWithoutCrashing() throws SecApiException {
+        // Skipped: a 3-year period (9999), no start date (7777), a bad date (8888),
+        // and an entry with no value - even though that one is the newest filing.
+        List<FinancialData> messy = FinancialDataService.parse(SAMPLE_COMPANY, MESSY_FACTS).years();
+
+        assertEquals(2, messy.size());
+        assertEquals(2022, messy.get(0).fiscalYear());
+        assertEquals(2023, messy.get(1).fiscalYear());
+    }
+
+    @Test
+    void liabilitiesStayMissingWhenTheyCantBeCalculated() throws SecApiException {
+        // 2023 has assets but no equity, so Assets - Equity can't be worked out.
+        FinancialData year2023 = FinancialDataService.parse(SAMPLE_COMPANY, MESSY_FACTS).latestYear();
+        assertNull(year2023.totalLiabilities());
+        assertFalse(year2023.liabilitiesCalculated());
+    }
+
     @Test
     void fiscalYearHandlesEarlyJanuaryYearEnds() {
         assertEquals(2025, FinancialDataService.fiscalYearOf(LocalDate.of(2025, 9, 27)));  // Apple-style

@@ -2,14 +2,19 @@ package com.stockscope.api;
 
 import com.stockscope.models.Company;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests the ticker-file parsing with a small sample of the SEC's real format.
+ * Tests ticker lookup with a small sample of the SEC's real format.
  * No network requests are made, so these tests are fast and always give the same result.
  */
 class CompanyLookupTest {
@@ -55,5 +60,16 @@ class CompanyLookupTest {
     @Test
     void emptyTickerListIsAnError() {
         assertThrows(SecApiException.class, () -> CompanyLookup.parseTickers("{}"));
+    }
+
+    @Test
+    void findByTickerWorksEndToEndFromTheCache(@TempDir Path cacheDir) throws IOException, SecApiException {
+        // A fresh cache file means no download happens, so this test works offline.
+        Files.writeString(cacheDir.resolve("company_tickers.json"), SAMPLE_TICKERS);
+        CompanyLookup lookup = new CompanyLookup(new SecApiClient(cacheDir));
+
+        assertEquals("Apple Inc.", lookup.findByTicker(" aapl ").orElseThrow().name());
+        assertEquals(1067983, lookup.findByTicker("brk.b").orElseThrow().cik());
+        assertTrue(lookup.findByTicker("NOPE").isEmpty()); // unknown ticker: empty, not an error
     }
 }

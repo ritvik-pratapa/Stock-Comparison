@@ -109,7 +109,7 @@ public class SecApiClient {
     }
 
     /** Turns an HTTP status code into a message that tells the user what to do. */
-    private static String describeHttpError(int status) {
+    static String describeHttpError(int status) {
         if (status == 403) {
             return "The SEC refused the request (HTTP 403). If you sent many requests quickly, "
                     + "wait a few minutes. Also make sure " + CONTACT_ENV_VAR + " is set to your email.";

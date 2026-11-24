@@ -1,0 +1,27 @@
+# Maven build output (compiled .class files, jars, test reports)
+target/
+
+# StockScope runtime data - the app recreates these folders when it runs.
+# cache/  holds downloaded SEC JSON files (large, and easy to re-download)
+# output/ holds generated charts and CSV exports
+cache/
+output/
+
+# Stray compiled files
+*.class
+
+# IDE settings (IntelliJ, VS Code, Eclipse)
+.idea/
+*.iml
+.vscode/
+.project
+.classpath
+.settings/
+
+# OS clutter
+.DS_Store
+Thumbs.db
+
+# Logs and local environment files (never commit secrets)
+*.log
+.env

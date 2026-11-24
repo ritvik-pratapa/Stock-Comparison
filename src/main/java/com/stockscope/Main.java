@@ -7,6 +7,7 @@ import com.stockscope.models.Company;
 import com.stockscope.models.CompanyFinancials;
 import com.stockscope.models.FinancialData;
 import com.stockscope.services.FinancialDataService;
+import com.stockscope.services.FinancialRatioService;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -15,12 +16,14 @@ import java.util.Scanner;
 import java.util.function.Function;
 
 import static com.stockscope.utils.FinancialFormatter.money;
+import static com.stockscope.utils.FinancialFormatter.percent;
+import static com.stockscope.utils.FinancialFormatter.ratio;
 
 /**
  * Entry point for StockScope.
  *
- * Phase 3 version: look up a ticker and print five years of reported financial data,
- * to check the parsing is correct. Later phases replace this with the comparison menu.
+ * Phase 4 version: look up a ticker and print five years of reported financial data
+ * plus calculated ratios. Phase 5 replaces this with the comparison menu.
  */
 public class Main {
 
@@ -81,6 +84,16 @@ public class Main {
                 year -> money(year.totalLiabilities()) + (year.liabilitiesCalculated() ? "*" : ""));
         printRow("Stockholders' Equity", years, year -> money(year.stockholdersEquity()));
         printRow("Cash & Equivalents", years, year -> money(year.cash()));
+
+        System.out.println("  --- Ratios calculated by StockScope ---");
+        printRow("Net Profit Margin", years,
+                year -> percent(FinancialRatioService.calculate(financials, year).netProfitMargin()));
+        printRow("Operating Margin", years,
+                year -> percent(FinancialRatioService.calculate(financials, year).operatingMargin()));
+        printRow("Return on Assets", years,
+                year -> percent(FinancialRatioService.calculate(financials, year).returnOnAssets()));
+        printRow("Debt-to-Equity", years,
+                year -> ratio(FinancialRatioService.calculate(financials, year).debtToEquity()));
 
         // anyMatch is a Stream method: "is this true for at least one year?"
         if (years.stream().anyMatch(FinancialData::liabilitiesCalculated)) {

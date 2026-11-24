@@ -3,11 +3,13 @@ package com.stockscope;
 import com.stockscope.api.CompanyLookup;
 import com.stockscope.api.SecApiClient;
 import com.stockscope.api.SecApiException;
+import com.stockscope.charts.ChartGenerator;
 import com.stockscope.models.Company;
 import com.stockscope.models.CompanyFinancials;
 import com.stockscope.services.FinancialDataService;
 import com.stockscope.ui.ReportPrinter;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -34,6 +36,7 @@ public class Main {
     private final Scanner scanner = new Scanner(System.in);
     private final CompanyLookup lookup;
     private final FinancialDataService dataService;
+    private final ChartGenerator chartGenerator = new ChartGenerator(Path.of("output"));
     private List<CompanyFinancials> companies = List.of(); // the current comparison
 
     public static void main(String[] args) {
@@ -59,7 +62,7 @@ public class Main {
             // A "switch" with arrows (Java 14+) runs only the matching case - no "break" needed.
             switch (choice) {
                 case 1 -> showCompanyDetails();
-                case 2 -> System.out.println("\nCharts will be added in Phase 6.");
+                case 2 -> generateCharts();
                 case 3 -> System.out.println("\nCSV export will be added in Phase 7.");
                 case 4 -> startNewComparison(); // if cancelled, the old comparison is kept
                 default -> {                    // 5 (Exit), or -1 if the input stream ended
@@ -143,6 +146,19 @@ public class Main {
         } catch (SecApiException e) {
             System.out.println("  Error: " + e.getMessage());
             return null;
+        }
+    }
+
+    private void generateCharts() {
+        System.out.println("\nCreating charts...");
+        try {
+            List<Path> files = chartGenerator.generateAll(companies);
+            System.out.println("Saved " + files.size() + " charts:");
+            for (Path file : files) {
+                System.out.println("  " + file);
+            }
+        } catch (IOException e) {
+            System.out.println("  Could not save the charts: " + e.getMessage());
         }
     }
 

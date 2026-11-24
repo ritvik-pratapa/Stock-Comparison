@@ -5,108 +5,195 @@ import com.stockscope.api.SecApiClient;
 import com.stockscope.api.SecApiException;
 import com.stockscope.models.Company;
 import com.stockscope.models.CompanyFinancials;
-import com.stockscope.models.FinancialData;
 import com.stockscope.services.FinancialDataService;
-import com.stockscope.services.FinancialRatioService;
+import com.stockscope.ui.ReportPrinter;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Scanner;
-import java.util.function.Function;
+import java.util.regex.Pattern;
 
-import static com.stockscope.utils.FinancialFormatter.money;
-import static com.stockscope.utils.FinancialFormatter.percent;
-import static com.stockscope.utils.FinancialFormatter.ratio;
+import static com.stockscope.services.ComparisonService.MAX_COMPANIES;
+import static com.stockscope.services.ComparisonService.MIN_COMPANIES;
 
 /**
- * Entry point for StockScope.
+ * StockScope's console interface: asks for tickers, shows the comparison, and runs the menu.
  *
- * Phase 4 version: look up a ticker and print five years of reported financial data
- * plus calculated ratios. Phase 5 replaces this with the comparison menu.
+ * main() creates a Main object and calls run(). Using an object (instead of all-static
+ * methods) lets the scanner, services, and current comparison be fields that every
+ * method can use, instead of passing them around as parameters.
  */
 public class Main {
 
-    private static final int YEARS_TO_SHOW = 5;
+    private static final String[] ORDINALS = {"first", "second", "third", "fourth"};
+    // Letters, digits, dots, and dashes, 1-10 characters: AAPL, BRK.B, BRK-B, MOG-A...
+    private static final Pattern TICKER_FORMAT = Pattern.compile("[A-Za-z0-9.\\-]{1,10}");
+
+    private final Scanner scanner = new Scanner(System.in);
+    private final CompanyLookup lookup;
+    private final FinancialDataService dataService;
+    private List<CompanyFinancials> companies = List.of(); // the current comparison
 
     public static void main(String[] args) {
-        printBanner();
+        new Main().run();
+    }
 
+    private Main() {
         SecApiClient secClient = new SecApiClient(Path.of("cache"));
-        CompanyLookup lookup = new CompanyLookup(secClient);
-        FinancialDataService dataService = new FinancialDataService(secClient);
-        Scanner scanner = new Scanner(System.in);
+        lookup = new CompanyLookup(secClient);
+        dataService = new FinancialDataService(secClient);
+    }
+
+    private void run() {
+        printBanner();
+        if (!startNewComparison()) {
+            System.out.println("Goodbye!");
+            return;
+        }
 
         while (true) {
-            System.out.print("\nEnter a ticker (or press Enter to quit): ");
-            if (!scanner.hasNextLine()) {
-                break; // input was closed (e.g. Ctrl+D)
+            printMenu();
+            int choice = readNumber("Select an option: ", 1, 5);
+            // A "switch" with arrows (Java 14+) runs only the matching case - no "break" needed.
+            switch (choice) {
+                case 1 -> showCompanyDetails();
+                case 2 -> System.out.println("\nCharts will be added in Phase 6.");
+                case 3 -> System.out.println("\nCSV export will be added in Phase 7.");
+                case 4 -> startNewComparison(); // if cancelled, the old comparison is kept
+                default -> {                    // 5 (Exit), or -1 if the input stream ended
+                    System.out.println("Goodbye!");
+                    return;
+                }
             }
-            String input = scanner.nextLine().trim();
+        }
+    }
+
+    /**
+     * Asks for 2-4 tickers, loads each company's data, and prints the comparison.
+     * Returns false if the user cancelled, in which case the current comparison is unchanged.
+     */
+    private boolean startNewComparison() {
+        System.out.println("\nCompare " + MIN_COMPANIES + " to " + MAX_COMPANIES
+                + " companies by ticker symbol (e.g. AAPL, MSFT, NVDA). Type 'quit' to cancel.");
+        List<CompanyFinancials> chosen = new ArrayList<>();
+
+        while (chosen.size() < MAX_COMPANIES) {
+            boolean canStopHere = chosen.size() >= MIN_COMPANIES;
+            String prompt = "Enter the " + ORDINALS[chosen.size()] + " company ticker"
+                    + (canStopHere ? " (or press Enter to compare now): " : ": ");
+            String input = readLine(prompt);
+
+            if (input == null || input.equalsIgnoreCase("quit")) {
+                return false;
+            }
             if (input.isEmpty()) {
-                break;
+                if (canStopHere) {
+                    break;
+                }
+                System.out.println("  Please enter a ticker symbol.");
+                continue;
             }
-            showFinancials(input, lookup, dataService);
+
+            CompanyFinancials loaded = loadCompany(input, chosen);
+            if (loaded != null) {
+                chosen.add(loaded);
+            }
         }
-        System.out.println("Goodbye!");
+
+        companies = chosen;
+        System.out.println("\nSuccessfully retrieved financial information.");
+        ReportPrinter.printComparison(companies);
+        return true;
     }
 
-    private static void showFinancials(String ticker, CompanyLookup lookup, FinancialDataService dataService) {
+    /**
+     * Validates a ticker, looks it up, and downloads its financial data.
+     * Returns null (after printing why) if anything goes wrong, so the user can try again.
+     */
+    private CompanyFinancials loadCompany(String input, List<CompanyFinancials> alreadyChosen) {
+        if (!TICKER_FORMAT.matcher(input).matches()) {
+            System.out.println("  \"" + input + "\" isn't a valid ticker format. Use symbols like AAPL or BRK.B.");
+            return null;
+        }
+
         try {
-            Optional<Company> company = lookup.findByTicker(ticker);
-            if (company.isEmpty()) {
-                System.out.println("  No company found with ticker \"" + ticker + "\".");
-                return;
+            Optional<Company> found = lookup.findByTicker(input);
+            if (found.isEmpty()) {
+                System.out.println("  No company found with ticker \"" + input.toUpperCase() + "\". Please try again.");
+                return null;
             }
-            System.out.println("  Fetching financial information...");
-            CompanyFinancials financials = dataService.getFinancials(company.get());
-            printYearTable(financials);
+            Company company = found.get();
+
+            // Compare by CIK, not ticker: GOOG and GOOGL are different tickers for the same company.
+            for (CompanyFinancials existing : alreadyChosen) {
+                if (existing.company().cik() == company.cik()) {
+                    System.out.println("  " + company.ticker() + " is the same company as "
+                            + existing.company().ticker() + ", which is already in this comparison.");
+                    return null;
+                }
+            }
+
+            System.out.println("  Fetching financial information for " + company.ticker() + "...");
+            CompanyFinancials financials = dataService.getFinancials(company);
+            System.out.println("  Loaded " + company.name() + " (latest fiscal year: FY"
+                    + financials.latestYear().fiscalYear() + ")");
+            return financials;
         } catch (SecApiException e) {
-            // One failed lookup shouldn't end the program - show the message and keep going.
             System.out.println("  Error: " + e.getMessage());
+            return null;
         }
     }
 
-    private static void printYearTable(CompanyFinancials financials) {
-        Company company = financials.company();
-        List<FinancialData> years = financials.recentYears(YEARS_TO_SHOW);
+    private void showCompanyDetails() {
+        System.out.println("\nWhich company?");
+        for (int i = 0; i < companies.size(); i++) {
+            Company company = companies.get(i).company();
+            System.out.println("  " + (i + 1) + ". " + company.ticker() + " - " + company.name());
+        }
+        int choice = readNumber("Select a company: ", 1, companies.size());
+        if (choice != -1) {
+            ReportPrinter.printCompanyDetails(companies.get(choice - 1));
+        }
+    }
 
+    private void printMenu() {
         System.out.println();
-        System.out.println(company.name() + " (" + company.ticker() + ") - reported figures from 10-K filings");
-        // Each row passes a small function (a lambda) saying which value to show per year.
-        printRow("Fiscal Year", years, year -> "FY" + year.fiscalYear());
-        printRow("Period Ended", years, year -> year.periodEnd().toString());
-        printRow("Revenue", years, year -> money(year.revenue()));
-        printRow("Net Income", years, year -> money(year.netIncome()));
-        printRow("Operating Income", years, year -> money(year.operatingIncome()));
-        printRow("Total Assets", years, year -> money(year.totalAssets()));
-        printRow("Total Liabilities", years,
-                year -> money(year.totalLiabilities()) + (year.liabilitiesCalculated() ? "*" : ""));
-        printRow("Stockholders' Equity", years, year -> money(year.stockholdersEquity()));
-        printRow("Cash & Equivalents", years, year -> money(year.cash()));
+        System.out.println("1. View detailed company information");
+        System.out.println("2. View financial charts");
+        System.out.println("3. Export comparison to CSV");
+        System.out.println("4. Compare different companies");
+        System.out.println("5. Exit");
+    }
 
-        System.out.println("  --- Ratios calculated by StockScope ---");
-        printRow("Net Profit Margin", years,
-                year -> percent(FinancialRatioService.calculate(financials, year).netProfitMargin()));
-        printRow("Operating Margin", years,
-                year -> percent(FinancialRatioService.calculate(financials, year).operatingMargin()));
-        printRow("Return on Assets", years,
-                year -> percent(FinancialRatioService.calculate(financials, year).returnOnAssets()));
-        printRow("Debt-to-Equity", years,
-                year -> ratio(FinancialRatioService.calculate(financials, year).debtToEquity()));
-
-        // anyMatch is a Stream method: "is this true for at least one year?"
-        if (years.stream().anyMatch(FinancialData::liabilitiesCalculated)) {
-            System.out.println("  * Not reported directly by the company; calculated as Total Assets - Total Equity.");
+    /** Keeps asking until the user types a whole number in range. Returns -1 if input ends. */
+    private int readNumber(String prompt, int min, int max) {
+        while (true) {
+            String input = readLine(prompt);
+            if (input == null) {
+                return -1;
+            }
+            try {
+                int number = Integer.parseInt(input);
+                if (number >= min && number <= max) {
+                    return number;
+                }
+            } catch (NumberFormatException e) {
+                // Not a number (e.g. "abc") - fall through to the message below.
+            }
+            System.out.println("  Please enter a number from " + min + " to " + max + ".");
         }
     }
 
-    private static void printRow(String label, List<FinancialData> years, Function<FinancialData, String> valueOf) {
-        StringBuilder row = new StringBuilder(String.format("  %-22s", label));
-        for (FinancialData year : years) {
-            row.append(String.format("%13s", valueOf.apply(year)));
+    /** Reads one trimmed line, or returns null if the input has ended (e.g. Ctrl+D). */
+    private String readLine(String prompt) {
+        System.out.print(prompt);
+        if (!scanner.hasNextLine()) {
+            System.out.println();
+            return null;
         }
-        System.out.println(row);
+        return scanner.nextLine().trim();
     }
 
     private static void printBanner() {

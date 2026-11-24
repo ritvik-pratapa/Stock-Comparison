@@ -76,7 +76,7 @@ public class CompanyLookup {
         }
 
         if (companies.isEmpty()) {
-            throw new SecApiException("The SEC ticker list was empty or in an unexpected format.", null);
+            throw new SecApiException("The SEC ticker list was empty or in an unexpected format.");
         }
         return companies;
     }

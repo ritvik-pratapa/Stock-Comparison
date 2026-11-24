@@ -14,6 +14,12 @@ public class SecApiException extends Exception {
     /** The HTTP status code (e.g. 404), or 0 if the problem wasn't an HTTP error. */
     private final int statusCode;
 
+    /** For problems found in the data itself, like a company with no annual reports. */
+    public SecApiException(String message) {
+        super(message);
+        this.statusCode = 0;
+    }
+
     /** For problems with no HTTP status, like no internet connection or unreadable JSON. */
     public SecApiException(String message, Throwable cause) {
         super(message, cause);

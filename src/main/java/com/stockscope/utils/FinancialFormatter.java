@@ -33,4 +33,20 @@ public final class FinancialFormatter {
         }
         return sign + String.format(Locale.US, "$%,.0f", abs);
     }
+
+    /** Formats a percentage with one decimal place, e.g. 24.31 -> "24.3%". */
+    public static String percent(Double value) {
+        if (value == null) {
+            return "N/A";
+        }
+        return String.format(Locale.US, "%.1f%%", value); // "%%" prints a literal % sign
+    }
+
+    /** Formats a plain ratio with two decimal places, e.g. 1.847 -> "1.85". */
+    public static String ratio(Double value) {
+        if (value == null) {
+            return "N/A";
+        }
+        return String.format(Locale.US, "%.2f", value);
+    }
 }

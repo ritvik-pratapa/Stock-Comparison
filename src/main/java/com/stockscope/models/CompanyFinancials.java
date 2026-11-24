@@ -1,6 +1,7 @@
 package com.stockscope.models;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Everything StockScope knows about one company: who it is and its yearly figures.
@@ -30,5 +31,18 @@ public record CompanyFinancials(Company company, List<FinancialData> years) {
     public List<FinancialData> recentYears(int count) {
         int start = Math.max(0, years.size() - count);
         return years.subList(start, years.size());
+    }
+
+    /**
+     * The fiscal year right before the given one, if we have it. Return on assets needs it,
+     * because the assets a company had at the START of a year are last year's ending assets.
+     */
+    public Optional<FinancialData> previousYear(FinancialData year) {
+        for (FinancialData candidate : years) {
+            if (candidate.fiscalYear() == year.fiscalYear() - 1) {
+                return Optional.of(candidate);
+            }
+        }
+        return Optional.empty();
     }
 }
